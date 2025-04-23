@@ -12,7 +12,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer closer(listener)
+	defer safeClose(listener)
 
 	for {
 		accept, err := listener.Accept()
@@ -26,7 +26,7 @@ func main() {
 			fmt.Println(value)
 		}
 		fmt.Println("Connection closed")
-		conCloser(accept)
+		safeClose(accept)
 	}
 }
 
@@ -70,16 +70,9 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 	return channel
 }
 
-func closer(target net.Listener) {
-	err := target.Close()
+func safeClose(closer io.Closer) {
+	err := closer.Close()
 	if err != nil {
-		panic(err)
-	}
-}
-
-func conCloser(target net.Conn) {
-	err := target.Close()
-	if err != nil {
-		panic(err)
+		fmt.Printf("Error closing: %v\n", err)
 	}
 }
