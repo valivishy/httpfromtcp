@@ -1,14 +1,23 @@
 package request
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 )
 
+type state int
+
+const (
+	initialized state = iota
+	done
+)
+
 type Request struct {
-	RequestLine Line
+	RequestLine  Line
+	requestState state
 }
 
 type Line struct {
@@ -17,58 +26,112 @@ type Line struct {
 	Method        string
 }
 
+const bufferSize = 8
+
 var httpMethods = []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace}
 
 func FromReader(reader io.Reader) (*Request, error) {
-	all, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
+	buffer := make([]byte, bufferSize, bufferSize*2)
+	readBytes := 0
+	request := Request{requestState: initialized}
+
+	for request.requestState == initialized {
+		if readBytes >= cap(buffer)/2 {
+			temp := make([]byte, cap(buffer)*2)
+			copy(temp, buffer[:readBytes])
+			buffer = temp
+		}
+
+		n, err := reader.Read(buffer[readBytes : readBytes+bufferSize])
+		if err != nil && err == io.EOF {
+			request.requestState = done
+			break
+		}
+
+		readBytes += n
+		parsed, err := request.parse(buffer)
+		if err != nil {
+			return nil, err
+		}
+		if parsed == 0 {
+			continue
+		}
+
+		temp := make([]byte, len(buffer)-parsed)
+		copy(temp, buffer[parsed:])
+		buffer = temp
+		readBytes -= parsed
 	}
 
-	line, err := parseRequestLine(string(all))
-	if err != nil {
-		return nil, err
+	if request.requestState == done && request.RequestLine == (Line{}) {
+		return nil, errors.New("error: request line not found")
 	}
-
-	return &Request{line}, nil
+	return &request, nil
 }
 
-func parseRequestLine(line string) (Line, error) {
+func (r *Request) parse(data []byte) (int, error) {
+	if r.requestState == initialized {
+		line, bytesRead, err := parseRequestLine(string(data))
+		if err != nil {
+			return -1, err
+		}
+		if bytesRead == 0 {
+			return 0, nil
+		}
+		r.RequestLine = line
+		r.requestState = done
+		return len(data), nil
+	}
+
+	if r.requestState == done {
+		return -1, errors.New("error: trying to read data in a done state")
+	}
+
+	return -1, errors.New("error: unknown state")
+}
+
+func parseRequestLine(line string) (Line, int, error) {
+	if !strings.Contains(line, "\r\n") {
+		return Line{}, 0, nil
+	}
+
 	split := strings.Split(line, "\r\n")
 	if len(split) < 1 {
-		return Line{}, invalidRequestLine(line)
+		return Line{}, -1, invalidRequestLine(line)
 	}
 
 	requestLine := strings.TrimSpace(split[0])
 	if requestLine == "" {
-		return Line{}, invalidRequestLine(line)
+		return Line{}, -1, invalidRequestLine(line)
 	}
 
 	lineComponents := strings.Split(requestLine, " ")
 	if len(lineComponents) != 3 {
-		return Line{}, invalidRequestLine(line)
+		return Line{}, -1, invalidRequestLine(line)
 	}
 
 	method, err := getMethod(lineComponents[0])
 	if err != nil {
-		return Line{}, err
+		return Line{}, -1, err
 	}
 
 	target, err := getTarget(lineComponents[1])
 	if err != nil {
-		return Line{}, err
+		return Line{}, -1, err
 	}
 
 	httpVersion, err := getHttpVersion(lineComponents[2])
 	if err != nil {
-		return Line{}, err
+		return Line{}, -1, err
 	}
 
 	return Line{
-		HttpVersion:   httpVersion,
-		RequestTarget: target,
-		Method:        method,
-	}, nil
+			HttpVersion:   httpVersion,
+			RequestTarget: target,
+			Method:        method,
+		},
+		len([]byte(line)),
+		nil
 }
 
 func invalidRequestLine(line string) error {
