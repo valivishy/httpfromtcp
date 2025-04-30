@@ -83,3 +83,23 @@ func TestRequestLineWithInvalidCharacterFailing(t *testing.T) {
 	assert.Equal(t, 0, n)
 	assert.False(t, done)
 }
+
+func TestParseDuplicateHeadersWithExisting(t *testing.T) {
+	headers := Headers{"content-type": "application/json"}
+	source := "Accept: */*\r\nContent-Type: application/xml\r\n\r\n"
+	data := []byte(source)
+	n, done, err := headers.Parse(data)
+	require.NoError(t, err)
+	require.NotNil(t, headers)
+	assert.Equal(t, "*/*", headers["accept"])
+	assert.Equal(t, 13, n)
+	assert.False(t, done)
+
+	source = source[n:]
+	data = []byte(source)
+	n, done, err = headers.Parse(data)
+	assert.Equal(t, 31, n)
+	assert.False(t, done)
+
+	assert.Equal(t, "application/json, application/xml", headers["content-type"])
+}

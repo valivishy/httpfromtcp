@@ -48,7 +48,11 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, err
 	}
 
-	h[strings.ToLower(headerName)] = strings.TrimSpace(potentialTarget[colonIndex+1:])
+	if _, ok := h[strings.ToLower(headerName)]; ok {
+		h[strings.ToLower(headerName)] += ", " + strings.TrimSpace(potentialTarget[colonIndex+1:])
+	} else {
+		h[strings.ToLower(headerName)] = strings.TrimSpace(potentialTarget[colonIndex+1:])
+	}
 
 	return len([]byte(string(data)[:crlfIndex+2])), false, nil
 }
