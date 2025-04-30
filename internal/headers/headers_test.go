@@ -12,7 +12,7 @@ func TestParseSingleHeader(t *testing.T) {
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 23, n)
 	assert.False(t, done)
 }
@@ -23,7 +23,7 @@ func TestParseSingleHeaderWithExtraWhitespace(t *testing.T) {
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 29, n)
 	assert.False(t, done)
 }
@@ -35,13 +35,13 @@ func TestParseMultipleHeadersWithExisting(t *testing.T) {
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 23, n)
 
 	source = source[n:]
 	data = []byte(source)
 	n, done, err = headers.Parse(data)
-	assert.Equal(t, "*/*", headers["Accept"])
+	assert.Equal(t, "*/*", headers["accept"])
 	assert.Equal(t, 13, n)
 	assert.False(t, done)
 
@@ -64,14 +64,22 @@ func TestRequestLineParseFailing(t *testing.T) {
 	assert.False(t, done)
 }
 
-func TestRequestLineWithEqualsParsing(t *testing.T) {
-	// Test: Unusual but valid header format
+func TestRequestLineWithEqualsFailing(t *testing.T) {
+	// Test: InvalidHeader
 	headers := Headers{}
 	data := []byte("Host=localhost:42069\r\n\r\n")
 	n, done, err := headers.Parse(data)
-	require.NoError(t, err)
-	require.NotNil(t, headers)
-	assert.Equal(t, "42069", headers["Host=localhost"])
-	assert.Equal(t, 22, n)
+	require.Error(t, err)
+	assert.Equal(t, 0, n)
+	assert.False(t, done)
+}
+
+func TestRequestLineWithInvalidCharacterFailing(t *testing.T) {
+	// Test: InvalidHeader
+	headers := Headers{}
+	data := []byte("H©st:localhost:42069\r\n\r\n")
+	n, done, err := headers.Parse(data)
+	require.Error(t, err)
+	assert.Equal(t, 0, n)
 	assert.False(t, done)
 }

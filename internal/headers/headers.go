@@ -2,6 +2,7 @@ package headers
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 )
 
@@ -43,7 +44,24 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, errors.New(invalidHeader)
 	}
 
-	h[headerName] = strings.TrimSpace(potentialTarget[colonIndex+1:])
+	if err = validateHeaderName(headerName); err != nil {
+		return 0, false, err
+	}
+
+	h[strings.ToLower(headerName)] = strings.TrimSpace(potentialTarget[colonIndex+1:])
 
 	return len([]byte(string(data)[:crlfIndex+2])), false, nil
+}
+
+func validateHeaderName(name string) error {
+	if name == "" {
+		return errors.New(invalidHeader)
+	}
+
+	validHeaderName := regexp.MustCompile(`^[A-Za-z0-9!#$%&'*+\-.\^_` + "`" + `{|}~]+$`)
+	if !validHeaderName.MatchString(name) {
+		return errors.New(invalidHeader)
+	}
+
+	return nil
 }
