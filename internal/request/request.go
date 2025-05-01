@@ -72,9 +72,14 @@ func FromReader(reader io.Reader) (*Request, error) {
 		readBytes, buffer = rebuildBuffer(buffer, parsed, readBytes)
 	}
 
+	return finalCheck(request)
+}
+
+func finalCheck(request Request) (*Request, error) {
 	if request.requestState == done && request.RequestLine == (Line{}) {
 		return nil, errors.New("error: request line not found")
 	}
+
 	return &request, nil
 }
 
