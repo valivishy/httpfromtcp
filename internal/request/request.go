@@ -6,6 +6,7 @@ import (
 	"github.com/valivishy/httpfromtcp/internal/headers"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -15,12 +16,14 @@ const (
 	initialized state = iota
 	done
 	requestStateParsingHeaders
+	requestStateParsingBody
 )
 
 type Request struct {
 	RequestLine  Line
-	requestState state
 	Headers      headers.Headers
+	Body         []byte
+	requestState state
 }
 
 type Line struct {
@@ -40,19 +43,30 @@ func FromReader(reader io.Reader) (*Request, error) {
 	request := Request{requestState: initialized, Headers: make(headers.Headers)}
 
 	for request.requestState != done {
-		if readBytes >= cap(buffer)/2 {
-			temp := make([]byte, cap(buffer)*2)
-			copy(temp, buffer[:readBytes])
-			buffer = temp
+		buffer = resizeBuffer(readBytes, buffer)
+
+		var n int
+		var err error
+		if request.requestState == requestStateParsingBody {
+			for {
+				buffer = resizeBuffer(readBytes, buffer)
+
+				n, err = reader.Read(buffer[readBytes : readBytes+bufferSize])
+				if err != nil && err == io.EOF {
+					break
+				}
+				readBytes += n
+			}
+			buffer = buffer[:readBytes]
+		} else {
+			n, err = reader.Read(buffer[readBytes : readBytes+bufferSize])
+			if err != nil && err == io.EOF {
+				request.requestState = done
+				break
+			}
+			readBytes += n
 		}
 
-		n, err := reader.Read(buffer[readBytes : readBytes+bufferSize])
-		if err != nil && err == io.EOF {
-			request.requestState = done
-			break
-		}
-
-		readBytes += n
 		parsed, err := request.parse(buffer)
 		if err != nil {
 			return nil, err
@@ -79,32 +93,26 @@ func FromReader(reader io.Reader) (*Request, error) {
 	return &request, nil
 }
 
+func resizeBuffer(readBytes int, buffer []byte) []byte {
+	if readBytes >= cap(buffer)/2 {
+		temp := make([]byte, (cap(buffer)+bufferSize)*2)
+		copy(temp, buffer[:readBytes])
+		buffer = temp
+	}
+	return buffer
+}
+
 func (r *Request) parse(data []byte) (int, error) {
 	if r.requestState == initialized {
-		line, bytesRead, err := parseRequestLine(string(data))
-		if err != nil {
-			return -1, err
-		}
-		if bytesRead == 0 {
-			return 0, nil
-		}
-		r.RequestLine = line
-		r.requestState = requestStateParsingHeaders
-		return bytesRead, nil
+		return r.parseLine(data)
 	}
 
 	if r.requestState == requestStateParsingHeaders {
-		n, d, err := r.Headers.Parse(data)
-		if err != nil {
-			return -1, err
-		}
+		return r.parseHeaders(data)
+	}
 
-		if d {
-			r.requestState = done
-			return n, nil
-		}
-
-		return n, nil
+	if r.requestState == requestStateParsingBody {
+		return r.parseBody(data)
 	}
 
 	if r.requestState == done {
@@ -112,6 +120,62 @@ func (r *Request) parse(data []byte) (int, error) {
 	}
 
 	return -1, errors.New("error: unknown state")
+}
+
+func (r *Request) parseBody(data []byte) (int, error) {
+	contentLengthString, ok := r.Headers.Get("Content-Length")
+	if !ok {
+		r.requestState = done
+		return 0, nil
+	}
+
+	contentLength, err := strconv.Atoi(contentLengthString)
+	if err != nil {
+		return -1, err
+	}
+
+	// Remove the CRLF
+	data = data[2:]
+
+	temp := make([]byte, len(r.Body)+len(data))
+	copy(temp, r.Body)
+	copy(temp[len(r.Body):], data)
+	r.Body = temp
+
+	if len(r.Body) != contentLength {
+		return -1, errors.New("error: body length exceeds content length")
+	}
+
+	r.requestState = done
+
+	return len(data), nil
+}
+
+func (r *Request) parseHeaders(data []byte) (int, error) {
+	n, d, err := r.Headers.Parse(data)
+	if err != nil {
+		return -1, err
+	}
+
+	if d {
+		r.requestState = requestStateParsingBody
+		return n, nil
+	}
+
+	return n, nil
+}
+
+func (r *Request) parseLine(data []byte) (int, error) {
+	line, bytesRead, err := parseRequestLine(string(data))
+	if err != nil {
+		return -1, err
+	}
+	if bytesRead == 0 {
+		return 0, nil
+	}
+	r.RequestLine = line
+	r.requestState = requestStateParsingHeaders
+	return bytesRead, nil
 }
 
 func parseRequestLine(line string) (Line, int, error) {

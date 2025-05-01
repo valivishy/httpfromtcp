@@ -37,17 +37,18 @@ func TestParseMultipleHeadersWithExisting(t *testing.T) {
 	require.NotNil(t, headers)
 	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 23, n)
+	assert.False(t, done)
 
 	source = source[n:]
 	data = []byte(source)
-	n, done, err = headers.Parse(data)
+	n, done, _ = headers.Parse(data)
 	assert.Equal(t, "*/*", headers["accept"])
 	assert.Equal(t, 13, n)
 	assert.False(t, done)
 
 	source = source[n:]
 	data = []byte(source)
-	n, done, err = headers.Parse(data)
+	n, done, _ = headers.Parse(data)
 	assert.Equal(t, 0, n)
 	assert.True(t, done)
 
@@ -97,7 +98,7 @@ func TestParseDuplicateHeadersWithExisting(t *testing.T) {
 
 	source = source[n:]
 	data = []byte(source)
-	n, done, err = headers.Parse(data)
+	n, done, _ = headers.Parse(data)
 	assert.Equal(t, 31, n)
 	assert.False(t, done)
 

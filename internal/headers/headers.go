@@ -13,6 +13,12 @@ const (
 
 type Headers map[string]string
 
+func (h Headers) Get(key string) (string, bool) {
+	s, ok := h[strings.ToLower(key)]
+
+	return s, ok
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	if len(data) < 1 {
 		return 0, false, errors.New("no data provided")
@@ -20,9 +26,10 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	potentialTarget := string(data)
 	crlfIndex := strings.Index(potentialTarget, crlf)
-	if crlfIndex == -1 {
+	switch crlfIndex {
+	case -1:
 		return 0, false, nil
-	} else if crlfIndex == 0 {
+	case 0:
 		return 0, true, nil
 	}
 

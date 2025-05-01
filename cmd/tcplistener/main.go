@@ -21,7 +21,7 @@ func main() {
 		}
 		fmt.Println("Connection accepted")
 
-		fromReader, err := request.FromReader(accept)
+		fromReader, _ := request.FromReader(accept)
 		fmt.Println("Request line:")
 		line := fromReader.RequestLine
 		fmt.Printf("- Method: %s\n", line.Method)

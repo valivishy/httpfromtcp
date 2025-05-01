@@ -73,13 +73,13 @@ func TestRequestLineParse(t *testing.T) {
 	_, err = FromReader(strings.NewReader("POST / HTTP/"))
 	require.Error(t, err)
 
-	r, err = FromReader(strings.NewReader("POST  HTTP/1.1"))
+	_, err = FromReader(strings.NewReader("POST  HTTP/1.1"))
 	require.Error(t, err)
 
-	r, err = FromReader(strings.NewReader("POST / HTTP/1.2"))
+	_, err = FromReader(strings.NewReader("POST / HTTP/1.2"))
 	require.Error(t, err)
 
-	r, err = FromReader(strings.NewReader("PoST / HTTP/1.1"))
+	_, err = FromReader(strings.NewReader("PoST / HTTP/1.1"))
 	require.Error(t, err)
 
 	// Test: Good GET Request line
@@ -180,6 +180,79 @@ func TestMalformedHeaderDoesNotParse(t *testing.T) {
 func TestMissingEndOfHeaders(t *testing.T) {
 	reader := &chunkReader{
 		data:            "GET / HTTP/1.1\r\nHost localhost:42069\r\n",
+		numBytesPerRead: 3,
+	}
+	_, err := FromReader(reader)
+	require.Error(t, err)
+}
+
+func TestStandardBodyParsed(t *testing.T) {
+	reader := &chunkReader{
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"Content-Length: 13\r\n" +
+			"\r\n" +
+			"hello world!\n",
+		numBytesPerRead: 3,
+	}
+	r, err := FromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Equal(t, "hello world!\n", string(r.Body))
+	assert.Equal(t, "13", r.Headers["content-length"])
+}
+
+func TestEmptyBodyParsed(t *testing.T) {
+	reader := &chunkReader{
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"\r\n",
+		numBytesPerRead: 3,
+	}
+	r, err := FromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Equal(t, "", string(r.Body))
+	if _, ok := r.Headers["content-length"]; ok {
+		t.Error("Content-Length header should not be present")
+	}
+}
+
+func TestEmptyBodyWithContentLength0Parsed(t *testing.T) {
+	reader := &chunkReader{
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"Content-Length: 0\r\n" +
+			"\r\n",
+		numBytesPerRead: 3,
+	}
+	r, err := FromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Equal(t, "", string(r.Body))
+	assert.Equal(t, "0", r.Headers["content-length"])
+}
+
+func TestFaultyBodyFailing(t *testing.T) {
+	reader := &chunkReader{
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"Content-Length: 20\r\n" +
+			"\r\n" +
+			"partial content",
+		numBytesPerRead: 3,
+	}
+	_, err := FromReader(reader)
+	require.Error(t, err)
+}
+
+func TestMismatchingContentAndContentLengthFails(t *testing.T) {
+	reader := &chunkReader{
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"Content-Length: 20\r\n" +
+			"\r\n" +
+			"hello world!\n",
 		numBytesPerRead: 3,
 	}
 	_, err := FromReader(reader)
