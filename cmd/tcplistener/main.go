@@ -28,6 +28,11 @@ func main() {
 		fmt.Printf("- Target: %s\n", line.RequestTarget)
 		fmt.Printf("- Version: %s\n", line.HttpVersion)
 
+		fmt.Println("Headers:")
+		for name, value := range fromReader.Headers {
+			fmt.Printf("- %s: %s\n", name, value)
+		}
+
 		fmt.Println("Connection closed")
 		safeClose(accept)
 	}
