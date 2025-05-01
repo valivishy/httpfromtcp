@@ -48,16 +48,10 @@ func FromReader(reader io.Reader) (*Request, error) {
 		var n int
 		var err error
 		if request.requestState == requestStateParsingBody {
-			for {
-				buffer = resizeBuffer(readBytes, buffer)
-
-				n, err = reader.Read(buffer[readBytes : readBytes+bufferSize])
-				if err != nil && err == io.EOF {
-					break
-				}
-				readBytes += n
+			buffer, readBytes, err = readBody(reader, buffer, readBytes, err)
+			if err != nil {
+				return nil, err
 			}
-			buffer = buffer[:readBytes]
 		} else {
 			n, err = reader.Read(buffer[readBytes : readBytes+bufferSize])
 			if err != nil && err == io.EOF {
@@ -75,22 +69,43 @@ func FromReader(reader io.Reader) (*Request, error) {
 			continue
 		}
 
-		var temp []byte
-		if len(buffer) > parsed {
-			temp = make([]byte, len(buffer)-parsed)
-			readBytes -= parsed
-		} else {
-			temp = make([]byte, len(buffer))
-			readBytes = parsed
-		}
-		copy(temp, buffer[parsed:])
-		buffer = temp
+		readBytes, buffer = rebuildBuffer(buffer, parsed, readBytes)
 	}
 
 	if request.requestState == done && request.RequestLine == (Line{}) {
 		return nil, errors.New("error: request line not found")
 	}
 	return &request, nil
+}
+
+func readBody(reader io.Reader, buffer []byte, readBytes int, err error) ([]byte, int, error) {
+	for {
+		buffer = resizeBuffer(readBytes, buffer)
+
+		n, err := reader.Read(buffer[readBytes : readBytes+bufferSize])
+		if err != nil && err == io.EOF {
+			break
+		}
+		readBytes += n
+	}
+	buffer = buffer[:readBytes]
+
+	return buffer, readBytes, err
+}
+
+func rebuildBuffer(buffer []byte, parsed int, readBytes int) (int, []byte) {
+	var temp []byte
+	if len(buffer) > parsed {
+		temp = make([]byte, len(buffer)-parsed)
+		readBytes -= parsed
+	} else {
+		temp = make([]byte, len(buffer))
+		readBytes = parsed
+	}
+	copy(temp, buffer[parsed:])
+	buffer = temp
+
+	return readBytes, buffer
 }
 
 func resizeBuffer(readBytes int, buffer []byte) []byte {
