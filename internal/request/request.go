@@ -33,6 +33,7 @@ var httpMethods = []string{http.MethodGet, http.MethodHead, http.MethodPost, htt
 func FromReader(reader io.Reader) (*Request, error) {
 	buffer := make([]byte, bufferSize, bufferSize*2)
 	readBytes := 0
+	totalParsedBytes := 0
 	request := Request{requestState: initialized}
 
 	for request.requestState == initialized {
@@ -57,10 +58,18 @@ func FromReader(reader io.Reader) (*Request, error) {
 			continue
 		}
 
-		temp := make([]byte, len(buffer)-parsed)
+		var temp []byte
+		if len(buffer) > parsed {
+			temp = make([]byte, len(buffer)-parsed)
+			readBytes -= parsed
+		} else {
+			temp = make([]byte, len(buffer))
+			readBytes = parsed
+		}
 		copy(temp, buffer[parsed:])
 		buffer = temp
 		readBytes -= parsed
+		totalParsedBytes += parsed
 	}
 
 	if request.requestState == done && request.RequestLine == (Line{}) {
