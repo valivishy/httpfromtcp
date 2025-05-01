@@ -3,6 +3,7 @@ package request
 import (
 	"errors"
 	"fmt"
+	"github.com/valivishy/httpfromtcp/internal/headers"
 	"io"
 	"net/http"
 	"strings"
@@ -13,11 +14,13 @@ type state int
 const (
 	initialized state = iota
 	done
+	requestStateParsingHeaders
 )
 
 type Request struct {
 	RequestLine  Line
 	requestState state
+	Headers      headers.Headers
 }
 
 type Line struct {
@@ -27,6 +30,7 @@ type Line struct {
 }
 
 const bufferSize = 8
+const crlf = "\r\n"
 
 var httpMethods = []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace}
 
@@ -34,9 +38,9 @@ func FromReader(reader io.Reader) (*Request, error) {
 	buffer := make([]byte, bufferSize, bufferSize*2)
 	readBytes := 0
 	totalParsedBytes := 0
-	request := Request{requestState: initialized}
+	request := Request{requestState: initialized, Headers: make(headers.Headers)}
 
-	for request.requestState == initialized {
+	for request.requestState != done {
 		if readBytes >= cap(buffer)/2 {
 			temp := make([]byte, cap(buffer)*2)
 			copy(temp, buffer[:readBytes])
@@ -68,7 +72,6 @@ func FromReader(reader io.Reader) (*Request, error) {
 		}
 		copy(temp, buffer[parsed:])
 		buffer = temp
-		readBytes -= parsed
 		totalParsedBytes += parsed
 	}
 
@@ -88,8 +91,22 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = line
-		r.requestState = done
-		return len(data), nil
+		r.requestState = requestStateParsingHeaders
+		return bytesRead, nil
+	}
+
+	if r.requestState == requestStateParsingHeaders {
+		n, d, err := r.Headers.Parse(data)
+		if err != nil {
+			return -1, err
+		}
+
+		if d {
+			r.requestState = done
+			return n, nil
+		}
+
+		return n, nil
 	}
 
 	if r.requestState == done {
@@ -100,11 +117,11 @@ func (r *Request) parse(data []byte) (int, error) {
 }
 
 func parseRequestLine(line string) (Line, int, error) {
-	if !strings.Contains(line, "\r\n") {
+	if !strings.Contains(line, crlf) {
 		return Line{}, 0, nil
 	}
 
-	split := strings.Split(line, "\r\n")
+	split := strings.Split(line, crlf)
 	if len(split) < 1 {
 		return Line{}, -1, invalidRequestLine(line)
 	}
@@ -139,7 +156,7 @@ func parseRequestLine(line string) (Line, int, error) {
 			RequestTarget: target,
 			Method:        method,
 		},
-		len([]byte(line)),
+		len([]byte(split[0])) + len(crlf),
 		nil
 }
 

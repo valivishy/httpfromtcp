@@ -118,3 +118,70 @@ func TestRequestLineParse(t *testing.T) {
 	assert.Equal(t, "/coffee", r.RequestLine.RequestTarget)
 	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
 }
+
+func TestStandardHeadersParse(t *testing.T) {
+	// Test: Standard Headers
+	reader := &chunkReader{
+		data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+		numBytesPerRead: 3,
+	}
+	r, err := FromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Equal(t, "localhost:42069", r.Headers["host"])
+	assert.Equal(t, "curl/7.81.0", r.Headers["user-agent"])
+	assert.Equal(t, "*/*", r.Headers["accept"])
+}
+
+func TestDuplicateHeadersParse(t *testing.T) {
+	reader := &chunkReader{
+		data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nHost: localhost:41000\r\nAccept: */*\r\n\r\n",
+		numBytesPerRead: 3,
+	}
+	r, err := FromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Equal(t, "localhost:42069, localhost:41000", r.Headers["host"])
+	assert.Equal(t, "*/*", r.Headers["accept"])
+}
+
+func TestCaseInsensitiveHeadersParse(t *testing.T) {
+	reader := &chunkReader{
+		data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nhost: localhost:41000\r\nAccept: */*\r\n\r\n",
+		numBytesPerRead: 3,
+	}
+	r, err := FromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Equal(t, "localhost:42069, localhost:41000", r.Headers["host"])
+	assert.Equal(t, "*/*", r.Headers["accept"])
+}
+
+func TestEmptyHeadersParse(t *testing.T) {
+	reader := &chunkReader{
+		data:            "GET / HTTP/1.1\r\n\r\n",
+		numBytesPerRead: 3,
+	}
+	r, err := FromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Empty(t, r.Headers)
+}
+
+func TestMalformedHeaderDoesNotParse(t *testing.T) {
+	reader := &chunkReader{
+		data:            "GET / HTTP/1.1\r\nHost localhost:42069\r\n\r\n",
+		numBytesPerRead: 3,
+	}
+	_, err := FromReader(reader)
+	require.Error(t, err)
+}
+
+func TestMissingEndOfHeaders(t *testing.T) {
+	reader := &chunkReader{
+		data:            "GET / HTTP/1.1\r\nHost localhost:42069\r\n",
+		numBytesPerRead: 3,
+	}
+	_, err := FromReader(reader)
+	require.Error(t, err)
+}
