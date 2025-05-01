@@ -33,6 +33,9 @@ func main() {
 			fmt.Printf("- %s: %s\n", name, value)
 		}
 
+		fmt.Println("Body:")
+		fmt.Println(string(fromReader.Body))
+
 		fmt.Println("Connection closed")
 		safeClose(accept)
 	}
