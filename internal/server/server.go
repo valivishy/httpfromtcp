@@ -1,17 +1,22 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/valivishy/httpfromtcp/internal/request"
+	"github.com/valivishy/httpfromtcp/internal/response"
 	"net"
+	"time"
 )
 
 type Server struct {
 	listener net.Listener
+	handler  Handler
 	open     bool
 }
 
-func Serve(port int) (*Server, error) {
-	server := &Server{}
+func Serve(port int, handler Handler) (*Server, error) {
+	server := &Server{handler: handler}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
@@ -58,7 +63,38 @@ func (s *Server) handle(conn net.Conn) {
 			panic(err)
 		}
 	}(conn)
-	if _, err := conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHello World!")); err != nil {
+
+	if err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+		fmt.Printf("warning: failed to set read deadline: %v\n", err)
+		return
+	}
+	parsedRequest, err := request.FromReader(conn)
+	fmt.Printf("Parsed request: %#v\n", parsedRequest)
+	if err != nil {
+		fmt.Printf("warning: failed to parse request: %v\n", err)
+		return
+	}
+
+	buffer := bytes.Buffer{}
+	handlerError := s.handler(&buffer, parsedRequest)
+	if handlerError != nil {
+		if err = WriteHandlerError(conn, *handlerError); err != nil {
+			panic(err)
+		}
+		return
+	}
+
+	if err = response.WriteStatusLine(conn, response.OK); err != nil {
 		panic(err)
+	}
+
+	if err = response.WriteHeaders(conn, response.GetDefaultHeaders(buffer.Len())); err != nil {
+		panic(err)
+	}
+
+	_, err = conn.Write(buffer.Bytes())
+	if err != nil {
+		fmt.Printf("warning: failed to write to connection: %v\n", err)
+		return
 	}
 }

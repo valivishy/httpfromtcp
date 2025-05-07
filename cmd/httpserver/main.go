@@ -11,7 +11,7 @@ import (
 const port = 42069
 
 func main() {
-	newServer, err := server.Serve(port)
+	newServer, err := server.Serve(port, server.HandlerFunc)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}

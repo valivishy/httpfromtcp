@@ -87,6 +87,10 @@ func readBody(reader io.Reader, buffer []byte, readBytes int, err error) ([]byte
 	for {
 		buffer = resizeBuffer(readBytes, buffer)
 
+		if isEmpty(buffer[readBytes:]) {
+			break
+		}
+
 		n, err := reader.Read(buffer[readBytes : readBytes+bufferSize])
 		if err != nil && err == io.EOF {
 			break
@@ -162,11 +166,13 @@ func (r *Request) parseBody(data []byte) (int, error) {
 	copy(temp[len(r.Body):], data)
 	r.Body = temp
 
-	if len(r.Body) != contentLength {
+	if len(r.Body) > contentLength {
 		return -1, errors.New("error: body length exceeds content length")
 	}
 
-	r.requestState = done
+	if len(r.Body) == contentLength {
+		r.requestState = done
+	}
 
 	return len(data), nil
 }
@@ -178,8 +184,13 @@ func (r *Request) parseHeaders(data []byte) (int, error) {
 	}
 
 	if d {
-		r.requestState = requestStateParsingBody
-		return n, nil
+		if cl, ok := r.Headers.Get("Content-Length"); ok && r.RequestLine.Method != http.MethodGet {
+			if _, err := strconv.Atoi(cl); err == nil {
+				r.requestState = requestStateParsingBody
+				return n, nil
+			}
+		}
+		r.requestState = done
 	}
 
 	return n, nil
@@ -289,4 +300,16 @@ func getHttpVersion(component string) (string, error) {
 	}
 
 	return strings.Split(component, "/")[1], nil
+}
+
+func isEmpty(slice []byte) bool {
+	isZero := true
+	for _, b := range slice {
+		if b != 0 {
+			isZero = false
+			break
+		}
+	}
+
+	return isZero
 }
